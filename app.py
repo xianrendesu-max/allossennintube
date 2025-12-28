@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 import requests
@@ -63,14 +63,6 @@ def try_json(url, params=None):
     except:
         pass
     return None
-
-def detect_os(request: Request):
-    ua = (request.headers.get("user-agent") or "").lower()
-    if "iphone" in ua or "ipad" in ua or "ipod" in ua:
-        return "ios"
-    if "android" in ua:
-        return "android"
-    return "other"
 
 # ===============================
 # Search
@@ -145,19 +137,11 @@ def api_comments(video_id: str):
     return {"comments": [], "source": None}
 
 # ===============================
-# Stream URL ONLY（OS判定対応）
+# Stream URL ONLY（日本語音声優先）
 # ===============================
 @app.get("/api/streamurl")
-def api_streamurl(
-    request: Request,
-    video_id: str,
-    quality: str = "best"
-):
-    os_type = detect_os(request)
-
-    # =========================
-    # ① yt-dlp / proxy 系（iOS最優先）
-    # =========================
+def api_streamurl(video_id: str, quality: str = "best"):
+    # ① yt-dlp / proxy 系（仕様変更なし）
     for base in [
         EDU_STREAM_API_BASE_URL,
         STREAM_YTDL_API_BASE_URL,
@@ -165,17 +149,38 @@ def api_streamurl(
     ]:
         data = try_json(f"{base}{video_id}", {"quality": quality})
         if data and data.get("url"):
-            if os_type == "ios":
-                return {
-                    "url": data["url"],
-                    "os": "ios",
-                    "source": base
-                }
             return RedirectResponse(data["url"])
 
-    # =========================
-    # ② Invidious fallback
-    # =========================
+    # ② Invidious fallback（英語音声除外）
+    for base in VIDEO_APIS:
+        data = try_json(f"{base}/api/v1/videos/{video_id}")
+        if not data:
+            continue
+
+        for f in data.get("adaptiveFormats", []):
+            if not f.get("url"):
+                continue
+
+            lang = (f.get("language") or "").lower()
+            audio_track = str(f.get("audioTrack") or "").lower()
+
+            if "en" in lang:
+                continue
+            if "english" in audio_track:
+                continue
+
+            label = f.get("qualityLabel") or ""
+
+            if quality == "best" or quality in label:
+                return RedirectResponse(f["url"])
+
+    raise HTTPException(503, "Stream unavailable")
+
+# ===============================
+# Download with Audio（追加機能・他は未変更）
+# ===============================
+@app.get("/api/download")
+def api_download(video_id: str, quality: str = "best"):
     random.shuffle(VIDEO_APIS)
 
     for base in VIDEO_APIS:
@@ -183,42 +188,36 @@ def api_streamurl(
         if not data:
             continue
 
-        for f in data.get("adaptiveFormats", []):
-            url = f.get("url")
-            if not url:
+        candidate = None
+
+        for f in data.get("formatStreams", []):
+            if not f.get("url"):
                 continue
 
-            # 🔴 英語音声除外
+            # 英語音声除外
             lang = (f.get("language") or "").lower()
             audio_track = str(f.get("audioTrack") or "").lower()
-            if "en" in lang or "english" in audio_track:
+
+            if "en" in lang:
+                continue
+            if "english" in audio_track:
                 continue
 
-            mime = (f.get("mimeType") or "").lower()
-
-            # =========================
-            # iOS専用制限
-            # =========================
-            if os_type == "ios":
-                # mp4 / m4a のみ
-                if "mp4" not in mime and "m4a" not in mime:
-                    continue
-
-                # audio-only 除外
-                if f.get("audioQuality") and not f.get("qualityLabel"):
-                    continue
-
-                return {
-                    "url": url,
-                    "os": "ios",
-                    "source": base
-                }
-
-            # =========================
-            # Android / PC
-            # =========================
             label = f.get("qualityLabel") or ""
-            if quality == "best" or quality in label:
-                return RedirectResponse(url)
 
-    raise HTTPException(503, "Stream unavailable")
+            if quality == "best":
+                candidate = f
+                break
+            elif quality in label:
+                candidate = f
+                break
+
+        if candidate:
+            return RedirectResponse(
+                candidate["url"],
+                headers={
+                    "Content-Disposition": f'attachment; filename="{video_id}.mp4"'
+                }
+            )
+
+    raise HTTPException(503, "Download unavailable")
