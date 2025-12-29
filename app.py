@@ -10,13 +10,9 @@ app = FastAPI()
 # ===============================
 # Static
 # ===============================
+# Render で statics が無くても即死しない
 if os.path.isdir("statics"):
     app.mount("/static", StaticFiles(directory="statics"), name="static")
-
-    if os.path.isdir("statics/music"):
-        app.mount("/music", StaticFiles(directory="statics/music", html=True), name="music")
-    else:
-        print("⚠ statics/music directory not found (skipped mount)")
 else:
     print("⚠ statics directory not found (skipped mount)")
 
@@ -237,7 +233,7 @@ def get_itag18_mp4(video_id: str):
 # ===============================
 @app.get("/api/streamurl")
 def api_streamurl(video_id: str):
-    # ① iPad最優先：HLS
+    # ① iPad最優先：HLS（m3u8）
     m3u8 = get_m3u8_from_yudlp(video_id)
     if m3u8:
         return RedirectResponse(m3u8)
@@ -258,9 +254,3 @@ def api_streamurl(video_id: str):
                 return RedirectResponse(f["url"])
 
     raise HTTPException(status_code=503, detail="Stream unavailable")
-
-# ===============================
-# Music router
-# ===============================
-from music import router as music_router
-app.include_router(music_router)
