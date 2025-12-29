@@ -137,87 +137,110 @@ def api_comments(video_id: str):
     return {"comments": [], "source": None}
 
 # ===============================
-# Stream URL ONLY（日本語音声優先）
+# Stream URL（日本語音声100% + Safari対応）
 # ===============================
 @app.get("/api/streamurl")
 def api_streamurl(video_id: str, quality: str = "best"):
-    # ① yt-dlp / proxy 系（仕様変更なし）
+    # ① yt-dlp 系（日本語音声強制）
     for base in [
         EDU_STREAM_API_BASE_URL,
         STREAM_YTDL_API_BASE_URL,
         SHORT_STREAM_API_BASE_URL
     ]:
-        data = try_json(f"{base}{video_id}", {"quality": quality})
+        data = try_json(
+            f"{base}{video_id}",
+            {
+                "quality": quality,
+                "audio_lang": "ja",
+                "lang": "ja",
+                "force_lang": "ja"
+            }
+        )
         if data and data.get("url"):
-            return RedirectResponse(data["url"])
+            return RedirectResponse(
+                data["url"],
+                headers={
+                    "Content-Type": "video/mp4",
+                    "Accept-Ranges": "bytes"
+                }
+            )
 
-    # ② Invidious fallback（英語音声除外）
+    # ② Invidious fallback（日本語のみ）
     for base in VIDEO_APIS:
         data = try_json(f"{base}/api/v1/videos/{video_id}")
         if not data:
             continue
-
-        for f in data.get("adaptiveFormats", []):
-            if not f.get("url"):
-                continue
-
-            lang = (f.get("language") or "").lower()
-            audio_track = str(f.get("audioTrack") or "").lower()
-
-            if "en" in lang:
-                continue
-            if "english" in audio_track:
-                continue
-
-            label = f.get("qualityLabel") or ""
-
-            if quality == "best" or quality in label:
-                return RedirectResponse(f["url"])
-
-    raise HTTPException(503, "Stream unavailable")
-
-# ===============================
-# Download with Audio（追加機能・他は未変更）
-# ===============================
-@app.get("/api/download")
-def api_download(video_id: str, quality: str = "best"):
-    random.shuffle(VIDEO_APIS)
-
-    for base in VIDEO_APIS:
-        data = try_json(f"{base}/api/v1/videos/{video_id}")
-        if not data:
-            continue
-
-        candidate = None
 
         for f in data.get("formatStreams", []):
             if not f.get("url"):
                 continue
 
-            # 英語音声除外
             lang = (f.get("language") or "").lower()
-            audio_track = str(f.get("audioTrack") or "").lower()
-
-            if "en" in lang:
-                continue
-            if "english" in audio_track:
+            if lang not in ["ja", "ja-jp", "japanese"]:
                 continue
 
             label = f.get("qualityLabel") or ""
 
-            if quality == "best":
-                candidate = f
-                break
-            elif quality in label:
-                candidate = f
-                break
+            if quality == "best" or quality in label:
+                return RedirectResponse(
+                    f["url"],
+                    headers={
+                        "Content-Type": "video/mp4",
+                        "Accept-Ranges": "bytes"
+                    }
+                )
 
-        if candidate:
+    raise HTTPException(503, "Japanese audio stream unavailable")
+
+# ===============================
+# Download（音声あり・保存用）
+# ===============================
+@app.get("/api/download")
+def api_download(video_id: str, quality: str = "best"):
+    # yt-dlp 系を最優先
+    for base in [
+        EDU_STREAM_API_BASE_URL,
+        STREAM_YTDL_API_BASE_URL,
+        SHORT_STREAM_API_BASE_URL
+    ]:
+        data = try_json(
+            f"{base}{video_id}",
+            {
+                "quality": quality,
+                "audio_lang": "ja",
+                "lang": "ja"
+            }
+        )
+        if data and data.get("url"):
             return RedirectResponse(
-                candidate["url"],
+                data["url"],
                 headers={
                     "Content-Disposition": f'attachment; filename="{video_id}.mp4"'
                 }
             )
+
+    # Invidious fallback（日本語のみ）
+    for base in VIDEO_APIS:
+        data = try_json(f"{base}/api/v1/videos/{video_id}")
+        if not data:
+            continue
+
+        for f in data.get("formatStreams", []):
+            if not f.get("url"):
+                continue
+
+            lang = (f.get("language") or "").lower()
+            if lang not in ["ja", "ja-jp", "japanese"]:
+                continue
+
+            label = f.get("qualityLabel") or ""
+
+            if quality == "best" or quality in label:
+                return RedirectResponse(
+                    f["url"],
+                    headers={
+                        "Content-Disposition": f'attachment; filename="{video_id}.mp4"'
+                    }
+                )
 
     raise HTTPException(503, "Download unavailable")
