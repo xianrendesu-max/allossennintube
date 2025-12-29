@@ -10,14 +10,21 @@ app = FastAPI()
 # ===============================
 # Static
 # ===============================
-if not os.path.isdir("statics"):
-    raise RuntimeError("statics directory not found")
+if os.path.isdir("statics"):
+    app.mount("/static", StaticFiles(directory="statics"), name="static")
 
-app.mount("/static", StaticFiles(directory="statics"), name="static")
+    if os.path.isdir("statics/music"):
+        app.mount("/music", StaticFiles(directory="statics/music", html=True), name="music")
+    else:
+        print("⚠ statics/music directory not found (skipped mount)")
+else:
+    print("⚠ statics directory not found (skipped mount)")
 
 @app.get("/")
 def root():
-    return FileResponse("statics/index.html")
+    if os.path.isfile("statics/index.html"):
+        return FileResponse("statics/index.html")
+    return {"status": "index.html not found"}
 
 # ===============================
 # API BASE LIST
@@ -60,8 +67,8 @@ def try_json(url, params=None):
         r = requests.get(url, params=params, headers=HEADERS, timeout=TIMEOUT)
         if r.status_code == 200:
             return r.json()
-    except:
-        pass
+    except Exception as e:
+        print("request error:", e)
     return None
 
 # ===============================
@@ -80,10 +87,12 @@ def api_search(q: str):
         for v in data:
             if not v.get("videoId"):
                 continue
+
             results.append({
-                "videoId": v["videoId"],
+                "videoId": v.get("videoId"),
                 "title": v.get("title"),
                 "author": v.get("author"),
+                "authorId": v.get("authorId"),
             })
 
         if results:
@@ -93,7 +102,7 @@ def api_search(q: str):
                 "source": base
             }
 
-    raise HTTPException(503, "Search unavailable")
+    raise HTTPException(status_code=503, detail="Search unavailable")
 
 # ===============================
 # Video Info
@@ -114,7 +123,7 @@ def api_video(video_id: str):
                 "source": base
             }
 
-    raise HTTPException(503, "Video info unavailable")
+    raise HTTPException(status_code=503, detail="Video info unavailable")
 
 # ===============================
 # Comments
@@ -137,110 +146,121 @@ def api_comments(video_id: str):
     return {"comments": [], "source": None}
 
 # ===============================
-# Stream URL（日本語音声100% + Safari対応）
+# Channel
+# ===============================
+@app.get("/api/channel")
+def api_channel(c: str):
+    random.shuffle(VIDEO_APIS)
+
+    for base in VIDEO_APIS:
+        ch = try_json(f"{base}/api/v1/channels/{c}")
+        if not ch:
+            continue
+
+        latest_videos = []
+
+        for v in ch.get("latestVideos", []):
+            published_raw = v.get("published")
+            published_iso = None
+
+            if isinstance(published_raw, str):
+                published_iso = published_raw.replace("Z", "+00:00")
+
+            latest_videos.append({
+                "videoId": v.get("videoId"),
+                "title": v.get("title"),
+                "author": ch.get("author"),
+                "authorId": c,
+                "viewCount": v.get("viewCount") or 0,
+                "viewCountText": v.get("viewCountText") or "0 回視聴",
+                "published": published_iso,
+                "publishedText": v.get("publishedText") or ""
+            })
+
+        return {
+            "author": ch.get("author"),
+            "authorId": c,
+            "authorThumbnails": ch.get("authorThumbnails"),
+            "description": ch.get("description") or "",
+            "subCount": ch.get("subCount") or 0,
+            "latestVideos": latest_videos,
+            "source": base
+        }
+
+    raise HTTPException(status_code=503, detail="Channel unavailable")
+
+# ===============================
+# Stream helpers（iPad対応）
+# ===============================
+def get_m3u8_from_yudlp(video_id: str):
+    try:
+        r = requests.get(
+            f"https://yudlp.vercel.app/m3u8/{video_id}",
+            headers=HEADERS,
+            timeout=TIMEOUT
+        )
+        data = r.json()
+
+        formats = data.get("m3u8_formats", [])
+        if not formats:
+            return None
+
+        def height(f):
+            try:
+                return int((f.get("resolution") or "0x0").split("x")[-1])
+            except:
+                return 0
+
+        formats.sort(key=height, reverse=True)
+        return formats[0].get("url")
+    except:
+        return None
+
+def get_itag18_mp4(video_id: str):
+    try:
+        r = requests.get(
+            f"{STREAM_YTDL_API_BASE_URL}{video_id}",
+            headers=HEADERS,
+            timeout=TIMEOUT
+        )
+        data = r.json()
+
+        for f in data.get("formats", []):
+            if str(f.get("itag")) == "18" and f.get("url"):
+                return f["url"]
+    except:
+        pass
+    return None
+
+# ===============================
+# Stream URL ONLY（iPad完全対応）
 # ===============================
 @app.get("/api/streamurl")
-def api_streamurl(video_id: str, quality: str = "best"):
-    # ① yt-dlp 系（日本語音声強制）
-    for base in [
-        EDU_STREAM_API_BASE_URL,
-        STREAM_YTDL_API_BASE_URL,
-        SHORT_STREAM_API_BASE_URL
-    ]:
-        data = try_json(
-            f"{base}{video_id}",
-            {
-                "quality": quality,
-                "audio_lang": "ja",
-                "lang": "ja",
-                "force_lang": "ja"
-            }
-        )
-        if data and data.get("url"):
-            return RedirectResponse(
-                data["url"],
-                headers={
-                    "Content-Type": "video/mp4",
-                    "Accept-Ranges": "bytes"
-                }
-            )
+def api_streamurl(video_id: str):
+    # ① iPad最優先：HLS
+    m3u8 = get_m3u8_from_yudlp(video_id)
+    if m3u8:
+        return RedirectResponse(m3u8)
 
-    # ② Invidious fallback（日本語のみ）
+    # ② MP4 音声込み（itag=18）
+    mp4 = get_itag18_mp4(video_id)
+    if mp4:
+        return RedirectResponse(mp4)
+
+    # ③ Invidious muxed
     for base in VIDEO_APIS:
         data = try_json(f"{base}/api/v1/videos/{video_id}")
         if not data:
             continue
 
         for f in data.get("formatStreams", []):
-            if not f.get("url"):
-                continue
+            if f.get("url"):
+                return RedirectResponse(f["url"])
 
-            lang = (f.get("language") or "").lower()
-            if lang not in ["ja", "ja-jp", "japanese"]:
-                continue
-
-            label = f.get("qualityLabel") or ""
-
-            if quality == "best" or quality in label:
-                return RedirectResponse(
-                    f["url"],
-                    headers={
-                        "Content-Type": "video/mp4",
-                        "Accept-Ranges": "bytes"
-                    }
-                )
-
-    raise HTTPException(503, "Japanese audio stream unavailable")
+    raise HTTPException(status_code=503, detail="Stream unavailable")
 
 # ===============================
-# Download（音声あり・保存用）
+# Music router
 # ===============================
-@app.get("/api/download")
-def api_download(video_id: str, quality: str = "best"):
-    # yt-dlp 系を最優先
-    for base in [
-        EDU_STREAM_API_BASE_URL,
-        STREAM_YTDL_API_BASE_URL,
-        SHORT_STREAM_API_BASE_URL
-    ]:
-        data = try_json(
-            f"{base}{video_id}",
-            {
-                "quality": quality,
-                "audio_lang": "ja",
-                "lang": "ja"
-            }
-        )
-        if data and data.get("url"):
-            return RedirectResponse(
-                data["url"],
-                headers={
-                    "Content-Disposition": f'attachment; filename="{video_id}.mp4"'
-                }
-            )
-
-    # Invidious fallback（日本語のみ）
-    for base in VIDEO_APIS:
-        data = try_json(f"{base}/api/v1/videos/{video_id}")
-        if not data:
-            continue
-
-        for f in data.get("formatStreams", []):
-            if not f.get("url"):
-                continue
-
-            lang = (f.get("language") or "").lower()
-            if lang not in ["ja", "ja-jp", "japanese"]:
-                continue
-
-            label = f.get("qualityLabel") or ""
-
-            if quality == "best" or quality in label:
-                return RedirectResponse(
-                    f["url"],
-                    headers={
-                        "Content-Disposition": f'attachment; filename="{video_id}.mp4"'
-                    }
-                )
-
-    raise HTTPException(503, "Download unavailable")
+from music import router as music_router
+app.include_router(music_router)
