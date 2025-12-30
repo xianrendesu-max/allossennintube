@@ -4,6 +4,8 @@ from fastapi.staticfiles import StaticFiles
 import requests
 import random
 import os
+import time
+from datetime import datetime
 
 app = FastAPI()
 
@@ -53,6 +55,25 @@ TIMEOUT = 6
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
+}
+
+# ===============================
+# Status Targets
+# ===============================
+STATUS_TARGETS = {
+    "invidious": [
+        "https://iv.melmac.space/api/v1/trending",
+        "https://pol1.iv.ggtyler.dev/api/v1/trending",
+        "https://invidious.0011.lt/api/v1/trending",
+        "https://yt.omada.cafe/api/v1/trending",
+    ],
+    "stream": [
+        "https://yudlp.vercel.app/stream/dQw4w9WgXcQ",
+        "https://yudlp.vercel.app/m3u8/dQw4w9WgXcQ",
+    ],
+    "education": [
+        "https://raw.githubusercontent.com/toka-kun/Education/refs/heads/main/keys/key1.json"
+    ]
 }
 
 # ===============================
@@ -233,12 +254,12 @@ def get_itag18_mp4(video_id: str):
 # ===============================
 @app.get("/api/streamurl")
 def api_streamurl(video_id: str):
-    # ① iPad最優先：HLS（m3u8）
+    # ① HLS（iPad最優先）
     m3u8 = get_m3u8_from_yudlp(video_id)
     if m3u8:
         return RedirectResponse(m3u8)
 
-    # ② MP4 音声込み（itag=18）
+    # ② MP4（itag18）
     mp4 = get_itag18_mp4(video_id)
     if mp4:
         return RedirectResponse(mp4)
@@ -254,3 +275,40 @@ def api_streamurl(video_id: str):
                 return RedirectResponse(f["url"])
 
     raise HTTPException(status_code=503, detail="Stream unavailable")
+
+# ===============================
+# Status Monitor
+# ===============================
+@app.get("/api/status")
+def api_status():
+    results = []
+
+    for category, urls in STATUS_TARGETS.items():
+        for url in urls:
+            start = time.time()
+            ok = False
+            status = None
+
+            try:
+                r = requests.get(url, headers=HEADERS, timeout=5)
+                status = r.status_code
+                if r.status_code == 200:
+                    ok = True
+            except Exception as e:
+                print("status check error:", url, e)
+
+            elapsed = round((time.time() - start) * 1000)
+
+            results.append({
+                "category": category,
+                "url": url,
+                "ok": ok,
+                "status": status,
+                "latency_ms": elapsed,
+                "checked_at": datetime.utcnow().isoformat() + "Z"
+            })
+
+    return {
+        "count": len(results),
+        "results": results
+                         }
