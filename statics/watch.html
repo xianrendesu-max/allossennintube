@@ -45,12 +45,29 @@ body {
   width: 100%;
   background: #000;
   aspect-ratio: 16 / 9;
+  position: relative;
 }
 
-.video-wrap iframe {
+.video-wrap iframe,
+.video-wrap video {
   width: 100%;
   height: 100%;
   border: none;
+}
+
+/* ===== PiPボタン ===== */
+.pip-btn {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: none;
 }
 
 /* ===== セクション ===== */
@@ -121,7 +138,18 @@ body {
 
 <!-- ===== 動画 ===== -->
 <div class="video-wrap">
-  <iframe id="player" allowfullscreen></iframe>
+  <iframe id="iframe-player" allowfullscreen></iframe>
+
+  <video
+    id="video-player"
+    controls
+    playsinline
+    webkit-playsinline
+    disablepictureinpicture="false"
+    style="display:none; background:#000;"
+  ></video>
+
+  <button id="pip-btn" class="pip-btn" onclick="togglePiP()">PiP</button>
 </div>
 
 <!-- ===== 情報 ===== -->
@@ -130,7 +158,6 @@ body {
   <div id="author" class="author"></div>
   <div id="desc" class="desc"></div>
 
-  <!-- ===== ストリーム ===== -->
   <div class="stream">
     <select id="quality">
       <option value="360p">360p</option>
@@ -149,34 +176,68 @@ body {
 
 <script>
 const videoId = new URLSearchParams(location.search).get("v");
-const player = document.getElementById("player");
 
-const INVIDIOUS_EMBED = "https://pol1.iv.ggtyler.dev/embed/";
+const iframePlayer = document.getElementById("iframe-player");
+const videoPlayer = document.getElementById("video-player");
+const pipBtn = document.getElementById("pip-btn");
 
 const btnNocookie = document.getElementById("btn-nocookie");
 const btnInvidious = document.getElementById("btn-invidious");
 
-/* ===== プレイヤー切替 ===== */
 function clearActive() {
   btnNocookie.classList.remove("active");
   btnInvidious.classList.remove("active");
 }
 
+/* ===== プレイヤー切替 ===== */
 function setPlayer(type) {
   clearActive();
 
+  iframePlayer.src = "";
+  iframePlayer.style.display = "none";
+
+  videoPlayer.pause();
+  videoPlayer.src = "";
+  videoPlayer.style.display = "none";
+  pipBtn.style.display = "none";
+
   if (type === "nocookie") {
-    player.src = `https://www.youtube-nocookie.com/embed/${videoId}`;
+    iframePlayer.src = `https://www.youtube-nocookie.com/embed/${videoId}`;
+    iframePlayer.style.display = "block";
     btnNocookie.classList.add("active");
   }
 
   if (type === "invidious") {
-    player.src = `${INVIDIOUS_EMBED}${videoId}`;
+    const q = document.getElementById("quality").value || "best";
+    videoPlayer.src = `/api/streamurl?video_id=${videoId}&quality=${q}`;
+    videoPlayer.style.display = "block";
+    pipBtn.style.display = "block";
     btnInvidious.classList.add("active");
   }
 }
 
+// 初期
 setPlayer("nocookie");
+
+/* ===== PiP制御 ===== */
+function togglePiP() {
+  // iOS Safari
+  if (videoPlayer.webkitSupportsPresentationMode) {
+    if (videoPlayer.webkitPresentationMode === "picture-in-picture") {
+      videoPlayer.webkitSetPresentationMode("inline");
+    } else {
+      videoPlayer.webkitSetPresentationMode("picture-in-picture");
+    }
+    return;
+  }
+
+  // Chrome / Edge
+  if (document.pictureInPictureElement) {
+    document.exitPictureInPicture();
+  } else {
+    videoPlayer.requestPictureInPicture();
+  }
+}
 
 /* ===== 動画情報 ===== */
 fetch(`/api/video?video_id=${videoId}`)
@@ -185,9 +246,6 @@ fetch(`/api/video?video_id=${videoId}`)
     document.getElementById("title").textContent = v.title || "タイトル不明";
     document.getElementById("author").textContent = v.author || "";
     document.getElementById("desc").textContent = v.description || "";
-  })
-  .catch(() => {
-    document.getElementById("title").textContent = "動画情報取得失敗";
   });
 
 /* ===== コメント ===== */
@@ -211,17 +269,13 @@ fetch(`/api/comments?video_id=${videoId}`)
       `;
       c.appendChild(div);
     });
-  })
-  .catch(() => {
-    document.getElementById("comments").textContent = "コメント取得失敗";
   });
 
-/* ===== streamurl へ遷移 ===== */
+/* ===== ストリーム再生 ===== */
 function openStream() {
-  const q = document.getElementById("quality").value;
-  location.href = `/api/streamurl?video_id=${videoId}&quality=${q}`;
+  setPlayer("invidious");
 }
 </script>
 
 </body>
-    </html>
+</html>
