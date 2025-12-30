@@ -45,7 +45,6 @@ body {
   width: 100%;
   background: #000;
   aspect-ratio: 16 / 9;
-  position: relative;
 }
 
 .video-wrap iframe,
@@ -53,21 +52,6 @@ body {
   width: 100%;
   height: 100%;
   border: none;
-}
-
-/* ===== PiP ===== */
-.pip-btn {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  padding: 6px 10px;
-  font-size: 12px;
-  background: rgba(0,0,0,0.6);
-  color: #fff;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  display: none;
 }
 
 /* ===== セクション ===== */
@@ -116,7 +100,7 @@ body {
   cursor: pointer;
 }
 
-.stream button.education {
+.stream button.green {
   background: #16a34a;
 }
 
@@ -146,19 +130,8 @@ body {
 </div>
 
 <!-- ===== 動画 ===== -->
-<div class="video-wrap">
-  <iframe id="iframe-player" allowfullscreen></iframe>
-
-  <video
-    id="video-player"
-    controls
-    playsinline
-    webkit-playsinline
-    disablepictureinpicture="false"
-    style="display:none; background:#000;"
-  ></video>
-
-  <button id="pip-btn" class="pip-btn" onclick="togglePiP()">PiP</button>
+<div class="video-wrap" id="videoWrap">
+  <iframe id="player" allowfullscreen></iframe>
 </div>
 
 <!-- ===== 情報 ===== -->
@@ -167,13 +140,14 @@ body {
   <div id="author" class="author"></div>
   <div id="desc" class="desc"></div>
 
+  <!-- ===== ストリーム ===== -->
   <div class="stream">
     <select id="quality">
       <option value="360p">360p</option>
       <option value="720p">720p</option>
       <option value="best">最高画質</option>
     </select>
-    <button onclick="openStream()">▶ ストリーム再生</button>
+    <button onclick="openStream()">▶ ストリーム再生（PiP対応）</button>
   </div>
 </div>
 
@@ -187,73 +161,45 @@ body {
 <div class="section">
   <div class="stream">
     <button onclick="goStreamUrl()">▶ ストリームURLに移動</button>
-    <button class="education" onclick="playEducation()">▶ YouTubeEducationで再生</button>
+    <button class="green" onclick="playEducation()">▶ YouTubeEducationで再生</button>
   </div>
 </div>
 
 <script>
 const videoId = new URLSearchParams(location.search).get("v");
+const player = document.getElementById("player");
+const videoWrap = document.getElementById("videoWrap");
 
-const iframePlayer = document.getElementById("iframe-player");
-const videoPlayer = document.getElementById("video-player");
-const pipBtn = document.getElementById("pip-btn");
+const INVIDIOUS_EMBED = "https://pol1.iv.ggtyler.dev/embed/";
 
 const btnNocookie = document.getElementById("btn-nocookie");
 const btnInvidious = document.getElementById("btn-invidious");
 
 let authorId = null;
 
+/* ===== プレイヤー切替 ===== */
 function clearActive() {
   btnNocookie.classList.remove("active");
   btnInvidious.classList.remove("active");
 }
 
-/* ===== プレイヤー切替 ===== */
 function setPlayer(type) {
   clearActive();
-
-  iframePlayer.src = "";
-  iframePlayer.style.display = "none";
-
-  videoPlayer.pause();
-  videoPlayer.src = "";
-  videoPlayer.style.display = "none";
-  pipBtn.style.display = "none";
+  videoWrap.innerHTML = '<iframe id="player" allowfullscreen></iframe>';
+  const iframe = document.getElementById("player");
 
   if (type === "nocookie") {
-    iframePlayer.src = `https://www.youtube-nocookie.com/embed/${videoId}`;
-    iframePlayer.style.display = "block";
+    iframe.src = `https://www.youtube-nocookie.com/embed/${videoId}`;
     btnNocookie.classList.add("active");
   }
 
   if (type === "invidious") {
-    const q = document.getElementById("quality").value || "best";
-    videoPlayer.src = `/api/streamurl?video_id=${videoId}&quality=${q}`;
-    videoPlayer.style.display = "block";
-    pipBtn.style.display = "block";
+    iframe.src = `${INVIDIOUS_EMBED}${videoId}`;
     btnInvidious.classList.add("active");
   }
 }
 
 setPlayer("nocookie");
-
-/* ===== PiP ===== */
-function togglePiP() {
-  if (videoPlayer.webkitSupportsPresentationMode) {
-    if (videoPlayer.webkitPresentationMode === "picture-in-picture") {
-      videoPlayer.webkitSetPresentationMode("inline");
-    } else {
-      videoPlayer.webkitSetPresentationMode("picture-in-picture");
-    }
-    return;
-  }
-
-  if (document.pictureInPictureElement) {
-    document.exitPictureInPicture();
-  } else {
-    videoPlayer.requestPictureInPicture();
-  }
-}
 
 /* ===== 動画情報 ===== */
 fetch(`/api/video?video_id=${videoId}`)
@@ -261,17 +207,20 @@ fetch(`/api/video?video_id=${videoId}`)
   .then(v => {
     document.getElementById("title").textContent = v.title || "タイトル不明";
 
-    const a = document.getElementById("author");
-    a.textContent = v.author || "";
+    const authorEl = document.getElementById("author");
+    authorEl.textContent = v.author || "";
     authorId = v.authorId;
 
-    a.onclick = () => {
+    authorEl.onclick = () => {
       if (authorId) {
         location.href = `/statics/channel.html?c=${authorId}`;
       }
     };
 
     document.getElementById("desc").textContent = v.description || "";
+  })
+  .catch(() => {
+    document.getElementById("title").textContent = "動画情報取得失敗";
   });
 
 /* ===== コメント ===== */
@@ -295,25 +244,50 @@ fetch(`/api/comments?video_id=${videoId}`)
       `;
       c.appendChild(div);
     });
+  })
+  .catch(() => {
+    document.getElementById("comments").textContent = "コメント取得失敗";
   });
 
-/* ===== 外部再生 ===== */
+/* ===== PiP ストリーム再生 ===== */
 function openStream() {
-  setPlayer("invidious");
+  const q = document.getElementById("quality").value;
+
+  fetch(`/api/streamurl?video_id=${videoId}&quality=${q}`, { redirect: "follow" })
+    .then(r => {
+      const url = r.url;
+
+      videoWrap.innerHTML = `
+        <video id="pipVideo" src="${url}" controls autoplay playsinline></video>
+      `;
+
+      const v = document.getElementById("pipVideo");
+
+      v.addEventListener("loadedmetadata", async () => {
+        if (document.pictureInPictureEnabled) {
+          try {
+            await v.requestPictureInPicture();
+          } catch {}
+        }
+      });
+    });
 }
 
+/* ===== ストリームURLへ ===== */
 function goStreamUrl() {
   const q = document.getElementById("quality").value || "best";
   location.href = `/api/streamurl?video_id=${videoId}&quality=${q}`;
 }
 
+/* ===== YouTubeEducation ===== */
 function playEducation() {
-  const keyUrl =
+  const configUrl =
     "https://raw.githubusercontent.com/toka-kun/Education/refs/heads/main/keys/key1.json";
-  const encoded = encodeURIComponent(keyUrl);
 
   location.href =
-    `https://www.youtubeeducation.com/watch?v=${videoId}&key=${encoded}`;
+    "https://www.youtubeeducation.com/watch"
+    + "?v=" + encodeURIComponent(videoId)
+    + "&config=" + encodeURIComponent(configUrl);
 }
 </script>
 
