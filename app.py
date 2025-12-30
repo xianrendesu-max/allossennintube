@@ -47,7 +47,7 @@ COMMENTS_APIS = [
 ]
 
 # ===============================
-# 追加 Invidious API（指定されたやつ）
+# 追加 Invidious API（既存）
 # ===============================
 INVIDIOUS_EXTRA_APIS = {
     "video": [
@@ -107,6 +107,52 @@ INVIDIOUS_EXTRA_APIS = {
         "https://lekker.gay",
     ],
 }
+
+# ===============================
+# 🔥 今回指定された API を追加（既存は保持）
+# ===============================
+INVIDIOUS_EXTRA_APIS["video"] += [
+    "https://invidious.exma.de/",
+    "https://invidious.f5.si/",
+    "https://siawaseok-wakame-server2.glitch.me/",
+    "https://lekker.gay/",
+    "https://id.420129.xyz/",
+    "https://invid-api.poketube.fun/",
+    "https://eu-proxy.poketube.fun/",
+    "https://cal1.iv.ggtyler.dev/",
+    "https://pol1.iv.ggtyler.dev/",
+]
+
+INVIDIOUS_EXTRA_APIS["search"] += [
+    "https://pol1.iv.ggtyler.dev/",
+    "https://youtube.mosesmang.com/",
+    "https://iteroni.com/",
+    "https://invidious.0011.lt/",
+    "https://iv.melmac.space/",
+    "https://rust.oskamp.nl/",
+]
+
+INVIDIOUS_EXTRA_APIS["channel"] += [
+    "https://siawaseok-wakame-server2.glitch.me/",
+    "https://id.420129.xyz/",
+    "https://invidious.0011.lt/",
+    "https://invidious.nietzospannend.nl/",
+]
+
+INVIDIOUS_EXTRA_APIS["playlist"] += [
+    "https://siawaseok-wakame-server2.glitch.me/",
+    "https://invidious.0011.lt/",
+    "https://invidious.nietzospannend.nl/",
+    "https://youtube.mosesmang.com/",
+    "https://iv.melmac.space/",
+    "https://lekker.gay/",
+]
+
+INVIDIOUS_EXTRA_APIS["comments"] += [
+    "https://siawaseok-wakame-server2.glitch.me/",
+    "https://invidious.0011.lt/",
+    "https://invidious.nietzospannend.nl/",
+]
 
 # ===============================
 # API list merge（重複除去）
@@ -219,31 +265,73 @@ def api_comments(video_id: str):
     return {"comments": [], "source": None}
 
 # ===============================
-# Stream helpers（iPad対応）
+# Stream helpers（iPad対応 + Invidious保険）
 # ===============================
 def get_m3u8_from_yudlp(video_id: str):
+    # ---- ① yt-dlp 系 m3u8（最優先） ----
     try:
-        r = requests.get(f"https://yudlp.vercel.app/m3u8/{video_id}", headers=HEADERS, timeout=TIMEOUT)
-        data = r.json()
-        formats = data.get("m3u8_formats", [])
-        formats.sort(
-            key=lambda f: int((f.get("resolution") or "0x0").split("x")[-1]),
-            reverse=True
+        r = requests.get(
+            f"https://yudlp.vercel.app/m3u8/{video_id}",
+            headers=HEADERS,
+            timeout=TIMEOUT
         )
-        return formats[0]["url"] if formats else None
-    except:
-        return None
-
-def get_itag18_mp4(video_id: str):
-    try:
-        r = requests.get(f"{STREAM_YTDL_API_BASE_URL}{video_id}", headers=HEADERS, timeout=TIMEOUT)
-        for f in r.json().get("formats", []):
-            if str(f.get("itag")) == "18" and f.get("url"):
-                return f["url"]
+        if r.status_code == 200:
+            data = r.json()
+            formats = data.get("m3u8_formats", [])
+            formats.sort(
+                key=lambda f: int((f.get("resolution") or "0x0").split("x")[-1]),
+                reverse=True
+            )
+            if formats and formats[0].get("url"):
+                return formats[0]["url"]
     except:
         pass
+
+    # ---- ② Invidious m3u8 保険 ----
+    for base in VIDEO_APIS:
+        try:
+            data = try_json(f"{base}/api/v1/videos/{video_id}")
+            if not data:
+                continue
+
+            for f in data.get("adaptiveFormats", []):
+                if f.get("type", "").startswith("video/mp4") and "url" in f:
+                    return f["url"]
+        except:
+            continue
+
     return None
 
+
+def get_itag18_mp4(video_id: str):
+    # ---- ① yt-dlp 系 mp4（itag=18） ----
+    try:
+        r = requests.get(
+            f"{STREAM_YTDL_API_BASE_URL}{video_id}",
+            headers=HEADERS,
+            timeout=TIMEOUT
+        )
+        if r.status_code == 200:
+            for f in r.json().get("formats", []):
+                if str(f.get("itag")) == "18" and f.get("url"):
+                    return f["url"]
+    except:
+        pass
+
+    # ---- ② Invidious mp4 保険（itag=18優先） ----
+    for base in VIDEO_APIS:
+        try:
+            data = try_json(f"{base}/api/v1/videos/{video_id}")
+            if not data:
+                continue
+
+            for f in data.get("formatStreams", []):
+                if str(f.get("itag")) == "18" and f.get("url"):
+                    return f["url"]
+        except:
+            continue
+
+    return None
 # ===============================
 # Stream URL
 # ===============================
