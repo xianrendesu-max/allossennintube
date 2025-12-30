@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>仙人YouTubeビュアー｜ステータス監視</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #0f172a;
+  color: #e5e7eb;
+}
+
+header {
+  padding: 12px;
+  background: #020617;
+  border-bottom: 1px solid #1e293b;
+}
+
+header h1 {
+  font-size: 18px;
+  margin: 0;
+}
+
+header .sub {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+main {
+  padding: 12px;
+}
+
+.section {
+  margin-bottom: 18px;
+}
+
+.section h2 {
+  font-size: 15px;
+  margin-bottom: 6px;
+  border-left: 4px solid #38bdf8;
+  padding-left: 6px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #020617;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.table th,
+.table td {
+  padding: 8px;
+  font-size: 13px;
+  border-bottom: 1px solid #1e293b;
+  text-align: left;
+}
+
+.table th {
+  background: #020617;
+  color: #94a3b8;
+}
+
+.ok {
+  color: #22c55e;
+  font-weight: bold;
+}
+
+.ng {
+  color: #ef4444;
+  font-weight: bold;
+}
+
+.latency {
+  font-variant-numeric: tabular-nums;
+}
+
+.footer {
+  text-align: center;
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 20px;
+}
+
+button {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+.top-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <h1>ステータス監視</h1>
+  <div class="sub">Invidious / Stream / YouTubeEducation</div>
+</header>
+
+<main>
+
+<div class="top-actions">
+  <button onclick="loadStatus()">🔄 手動更新</button>
+  <button onclick="toggleAuto()">⏱ 自動更新: <span id="autoState">ON</span></button>
+</div>
+
+<div id="content">読み込み中...</div>
+
+<div class="footer">
+  最終更新: <span id="updated">-</span>
+</div>
+
+</main>
+
+<script>
+let auto = true;
+let timer = null;
+
+function toggleAuto() {
+  auto = !auto;
+  document.getElementById("autoState").textContent = auto ? "ON" : "OFF";
+  if (auto) startAuto();
+  else stopAuto();
+}
+
+function startAuto() {
+  stopAuto();
+  timer = setInterval(loadStatus, 30000);
+}
+
+function stopAuto() {
+  if (timer) clearInterval(timer);
+  timer = null;
+}
+
+function groupByCategory(data) {
+  const map = {};
+  data.forEach(r => {
+    if (!map[r.category]) map[r.category] = [];
+    map[r.category].push(r);
+  });
+  return map;
+}
+
+function loadStatus() {
+  fetch("/api/status")
+    .then(r => r.json())
+    .then(d => {
+      const content = document.getElementById("content");
+      content.innerHTML = "";
+
+      const grouped = groupByCategory(d.results);
+
+      Object.keys(grouped).forEach(cat => {
+        const sec = document.createElement("div");
+        sec.className = "section";
+
+        const h2 = document.createElement("h2");
+        h2.textContent = cat.toUpperCase();
+        sec.appendChild(h2);
+
+        const table = document.createElement("table");
+        table.className = "table";
+
+        table.innerHTML = `
+          <thead>
+            <tr>
+              <th>URL</th>
+              <th>Status</th>
+              <th>HTTP</th>
+              <th>Latency</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        `;
+
+        const tbody = table.querySelector("tbody");
+
+        grouped[cat].forEach(r => {
+          const tr = document.createElement("tr");
+
+          tr.innerHTML = `
+            <td style="word-break: break-all">${r.url}</td>
+            <td class="${r.ok ? "ok" : "ng"}">${r.ok ? "OK" : "NG"}</td>
+            <td>${r.status ?? "-"}</td>
+            <td class="latency">${r.latency_ms} ms</td>
+          `;
+
+          tbody.appendChild(tr);
+        });
+
+        sec.appendChild(table);
+        content.appendChild(sec);
+      });
+
+      document.getElementById("updated").textContent =
+        new Date().toLocaleString();
+    })
+    .catch(() => {
+      document.getElementById("content").textContent =
+        "ステータス取得に失敗しました";
+    });
+}
+
+loadStatus();
+startAuto();
+</script>
+
+</body>
+</html>
