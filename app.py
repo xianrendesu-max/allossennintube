@@ -24,40 +24,20 @@ def root():
     return {"status": "index.html not found"}
 
 # ===============================
-# Base API lists（既存）
+# Invidious API lists（総当たり）
 # ===============================
-VIDEO_APIS = [
-    "https://iv.melmac.space",
-    "https://pol1.iv.ggtyler.dev",
-    "https://cal1.iv.ggtyler.dev",
-    "https://invidious.0011.lt",
-    "https://yt.omada.cafe",
-]
-
-SEARCH_APIS = VIDEO_APIS.copy()
-
-COMMENTS_APIS = [
-    "https://invidious.lunivers.trade",
-    "https://invidious.ducks.party",
-    "https://super8.absturztau.be",
-    "https://invidious.nikkosphere.com",
-    "https://yt.omada.cafe",
-    "https://iv.melmac.space",
-    "https://iv.duti.dev",
-]
-
-# ===============================
-# 追加 Invidious API（指定されたやつ）
-# ===============================
-INVIDIOUS_EXTRA_APIS = {
+INVIDIOUS_APIS = {
     "video": [
+        "https://iv.melmac.space",
+        "https://pol1.iv.ggtyler.dev",
+        "https://cal1.iv.ggtyler.dev",
+        "https://invidious.0011.lt",
+        "https://yt.omada.cafe",
         "https://super8.absturztau.be",
         "https://invidious.ducks.party",
         "https://invidious.lunivers.trade",
         "https://invidious.nikkosphere.com",
-        "https://iv.melmac.space",
         "https://lekker.gay",
-        "https://cal1.iv.ggtyler.dev",
         "https://34.97.38.181",
     ],
     "search": [
@@ -105,47 +85,17 @@ INVIDIOUS_EXTRA_APIS = {
         "https://pol1.iv.ggtyler.dev",
         "https://invidious.nietzospannend.nl",
         "https://lekker.gay",
+        "https://super8.absturztau.be",
+        "https://invidious.ducks.party",
+        "https://invidious.lunivers.trade",
     ],
 }
-
-# ===============================
-# API list merge（重複除去）
-# ===============================
-def merge(base, extra):
-    return list(dict.fromkeys(base + extra))
-
-VIDEO_APIS = merge(VIDEO_APIS, INVIDIOUS_EXTRA_APIS["video"])
-SEARCH_APIS = merge(SEARCH_APIS, INVIDIOUS_EXTRA_APIS["search"])
-COMMENTS_APIS = merge(COMMENTS_APIS, INVIDIOUS_EXTRA_APIS["comments"])
-
-# ===============================
-# Other APIs
-# ===============================
-EDU_STREAM_API_BASE_URL = "https://raw.githubusercontent.com/toka-kun/Education/refs/heads/main/keys/key1.json"
-STREAM_YTDL_API_BASE_URL = "https://yudlp.vercel.app/stream/"
-SHORT_STREAM_API_BASE_URL = "https://yt-dl-kappa.vercel.app/short/"
 
 TIMEOUT = 6
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0"
-}
-
-# ===============================
-# Status Targets
-# ===============================
-STATUS_TARGETS = {
-    "invidious": [
-        f"{u}/api/v1/trending" for u in VIDEO_APIS
-    ],
-    "stream": [
-        "https://yudlp.vercel.app/stream/dQw4w9WgXcQ",
-        "https://yudlp.vercel.app/m3u8/dQw4w9WgXcQ",
-    ],
-    "education": [
-        EDU_STREAM_API_BASE_URL
-    ]
-}
+EDU_STREAM_API_BASE_URL = "https://raw.githubusercontent.com/toka-kun/Education/refs/heads/main/keys/key1.json"
+STREAM_YTDL_API_BASE_URL = "https://yudlp.vercel.app/stream/"
 
 # ===============================
 # Utils
@@ -155,20 +105,23 @@ def try_json(url, params=None):
         r = requests.get(url, params=params, headers=HEADERS, timeout=TIMEOUT)
         if r.status_code == 200:
             return r.json()
-    except requests.exceptions.RequestException:
-        pass
+    except Exception as e:
+        print("request error:", url, e)
     return None
 
 # ===============================
-# Search
+# Search（総当たり）
 # ===============================
 @app.get("/api/search")
 def api_search(q: str):
-    random.shuffle(SEARCH_APIS)
-    for base in SEARCH_APIS:
+    apis = INVIDIOUS_APIS["search"].copy()
+    random.shuffle(apis)
+
+    for base in apis:
         data = try_json(f"{base}/api/v1/search", {"q": q, "type": "video"})
         if isinstance(data, list) and data:
             return {
+                "source": base,
                 "results": [
                     {
                         "videoId": v.get("videoId"),
@@ -177,45 +130,134 @@ def api_search(q: str):
                         "authorId": v.get("authorId"),
                     }
                     for v in data if v.get("videoId")
-                ],
-                "source": base
+                ]
             }
+
     raise HTTPException(status_code=503, detail="Search unavailable")
 
 # ===============================
-# Video Info
+# Video Info（総当たり）
 # ===============================
 @app.get("/api/video")
 def api_video(video_id: str):
-    random.shuffle(VIDEO_APIS)
-    for base in VIDEO_APIS:
+    apis = INVIDIOUS_APIS["video"].copy()
+    random.shuffle(apis)
+
+    for base in apis:
         data = try_json(f"{base}/api/v1/videos/{video_id}")
         if data:
             return {
+                "source": base,
                 "title": data.get("title"),
                 "author": data.get("author"),
                 "description": data.get("description"),
                 "viewCount": data.get("viewCount"),
                 "lengthSeconds": data.get("lengthSeconds"),
-                "source": base
             }
+
     raise HTTPException(status_code=503, detail="Video info unavailable")
 
 # ===============================
-# Comments
+# Channel（完全版・修整済）
+# ===============================
+@app.get("/api/channel")
+def api_channel(c: str):
+    random.shuffle(VIDEO_APIS)
+
+    for base in VIDEO_APIS:
+        ch = try_json(f"{base}/api/v1/channels/{c}")
+        if not ch:
+            continue
+
+        latest_videos = []
+
+        for v in ch.get("latestVideos", []):
+            published_raw = v.get("published")
+            published_iso = None
+
+            if isinstance(published_raw, str):
+                try:
+                    published_iso = published_raw.replace("Z", "+00:00")
+                except:
+                    published_iso = None
+
+            latest_videos.append({
+                "videoId": v.get("videoId"),
+                "title": v.get("title"),
+                "author": ch.get("author"),
+                "authorId": c,
+                "viewCount": v.get("viewCount") or 0,
+                "viewCountText": v.get("viewCountText") or "0 回視聴",
+                "published": published_iso,
+                "publishedText": v.get("publishedText") or ""
+            })
+
+        view_count = ch.get("viewCount")
+        video_count = ch.get("videoCount")
+        joined_date = ch.get("joinedDate")
+
+        if not isinstance(video_count, int):
+            video_count = len(latest_videos)
+
+        if not isinstance(joined_date, str):
+            published_dates = [
+                v["published"]
+                for v in latest_videos
+                if isinstance(v.get("published"), str)
+            ]
+            joined_date = min(published_dates) if published_dates else None
+
+        related_channels = []
+
+        for r in ch.get("relatedChannels", []):
+            icon = None
+            thumbs = r.get("authorThumbnails")
+
+            if isinstance(thumbs, list) and thumbs:
+                icon = thumbs[-1].get("url")
+
+            related_channels.append({
+                "channelId": r.get("authorId"),
+                "name": r.get("author"),
+                "icon": icon,
+                "subCountText": r.get("subCountText") or "?"
+            })
+
+        return {
+            "author": ch.get("author"),
+            "authorId": c,
+            "authorThumbnails": ch.get("authorThumbnails"),
+            "description": ch.get("description") or "",
+            "subCount": ch.get("subCount") or 0,
+            "viewCount": view_count or 0,
+            "videoCount": video_count,
+            "joinedDate": joined_date,
+            "latestVideos": latest_videos,
+            "relatedChannels": related_channels,
+            "source": base
+        }
+
+    raise HTTPException(status_code=503, detail="Channel unavailable")
+
+# ===============================
+# Comments（総当たり）
 # ===============================
 @app.get("/api/comments")
 def api_comments(video_id: str):
-    for base in COMMENTS_APIS:
+    apis = INVIDIOUS_APIS["comments"].copy()
+    random.shuffle(apis)
+
+    for base in apis:
         data = try_json(f"{base}/api/v1/comments/{video_id}")
         if data:
             return {
+                "source": base,
                 "comments": [
                     {"author": c.get("author"), "content": c.get("content")}
                     for c in data.get("comments", [])
-                ],
-                "source": base
+                ]
             }
+
     return {"comments": [], "source": None}
 
 # ===============================
@@ -223,7 +265,11 @@ def api_comments(video_id: str):
 # ===============================
 def get_m3u8_from_yudlp(video_id: str):
     try:
-        r = requests.get(f"https://yudlp.vercel.app/m3u8/{video_id}", headers=HEADERS, timeout=TIMEOUT)
+        r = requests.get(
+            f"https://yudlp.vercel.app/m3u8/{video_id}",
+            headers=HEADERS,
+            timeout=TIMEOUT
+        )
         data = r.json()
         formats = data.get("m3u8_formats", [])
         formats.sort(
@@ -236,7 +282,11 @@ def get_m3u8_from_yudlp(video_id: str):
 
 def get_itag18_mp4(video_id: str):
     try:
-        r = requests.get(f"{STREAM_YTDL_API_BASE_URL}{video_id}", headers=HEADERS, timeout=TIMEOUT)
+        r = requests.get(
+            f"{STREAM_YTDL_API_BASE_URL}{video_id}",
+            headers=HEADERS,
+            timeout=TIMEOUT
+        )
         for f in r.json().get("formats", []):
             if str(f.get("itag")) == "18" and f.get("url"):
                 return f["url"]
@@ -245,7 +295,7 @@ def get_itag18_mp4(video_id: str):
     return None
 
 # ===============================
-# Stream URL
+# Stream URL（総当たり）
 # ===============================
 @app.get("/api/streamurl")
 def api_streamurl(video_id: str):
@@ -257,7 +307,10 @@ def api_streamurl(video_id: str):
     if mp4:
         return RedirectResponse(mp4)
 
-    for base in VIDEO_APIS:
+    apis = INVIDIOUS_APIS["video"].copy()
+    random.shuffle(apis)
+
+    for base in apis:
         data = try_json(f"{base}/api/v1/videos/{video_id}")
         if data:
             for f in data.get("formatStreams", []):
@@ -267,13 +320,15 @@ def api_streamurl(video_id: str):
     raise HTTPException(status_code=503, detail="Stream unavailable")
 
 # ===============================
-# Status Monitor
+# Status Monitor（全API監視）
 # ===============================
 @app.get("/api/status")
 def api_status():
     results = []
-    for category, urls in STATUS_TARGETS.items():
-        for url in urls:
+
+    for category, urls in INVIDIOUS_APIS.items():
+        for base in urls:
+            url = f"{base}/api/v1/trending"
             start = time.time()
             ok = False
             status = None
@@ -283,6 +338,7 @@ def api_status():
                 ok = r.status_code == 200
             except:
                 pass
+
             results.append({
                 "category": category,
                 "url": url,
@@ -291,4 +347,5 @@ def api_status():
                 "latency_ms": round((time.time() - start) * 1000),
                 "checked_at": datetime.utcnow().isoformat() + "Z"
             })
+
     return {"count": len(results), "results": results}
