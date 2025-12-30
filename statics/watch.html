@@ -55,7 +55,7 @@ body {
   border: none;
 }
 
-/* ===== PiPボタン ===== */
+/* ===== PiP ===== */
 .pip-btn {
   position: absolute;
   right: 8px;
@@ -86,8 +86,13 @@ body {
 
 .author {
   font-size: 13px;
-  color: #555;
+  color: #2563eb;
   margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.author:hover {
+  text-decoration: underline;
 }
 
 .desc {
@@ -109,6 +114,10 @@ body {
   color: #fff;
   border: none;
   cursor: pointer;
+}
+
+.stream button.education {
+  background: #16a34a;
 }
 
 /* ===== コメント ===== */
@@ -174,6 +183,14 @@ body {
   <div id="comments">読み込み中...</div>
 </div>
 
+<!-- ===== 外部再生 ===== -->
+<div class="section">
+  <div class="stream">
+    <button onclick="goStreamUrl()">▶ ストリームURLに移動</button>
+    <button class="education" onclick="playEducation()">▶ YouTubeEducationで再生</button>
+  </div>
+</div>
+
 <script>
 const videoId = new URLSearchParams(location.search).get("v");
 
@@ -183,6 +200,8 @@ const pipBtn = document.getElementById("pip-btn");
 
 const btnNocookie = document.getElementById("btn-nocookie");
 const btnInvidious = document.getElementById("btn-invidious");
+
+let authorId = null;
 
 function clearActive() {
   btnNocookie.classList.remove("active");
@@ -216,12 +235,10 @@ function setPlayer(type) {
   }
 }
 
-// 初期
 setPlayer("nocookie");
 
-/* ===== PiP制御 ===== */
+/* ===== PiP ===== */
 function togglePiP() {
-  // iOS Safari
   if (videoPlayer.webkitSupportsPresentationMode) {
     if (videoPlayer.webkitPresentationMode === "picture-in-picture") {
       videoPlayer.webkitSetPresentationMode("inline");
@@ -231,7 +248,6 @@ function togglePiP() {
     return;
   }
 
-  // Chrome / Edge
   if (document.pictureInPictureElement) {
     document.exitPictureInPicture();
   } else {
@@ -244,7 +260,17 @@ fetch(`/api/video?video_id=${videoId}`)
   .then(r => r.json())
   .then(v => {
     document.getElementById("title").textContent = v.title || "タイトル不明";
-    document.getElementById("author").textContent = v.author || "";
+
+    const a = document.getElementById("author");
+    a.textContent = v.author || "";
+    authorId = v.authorId;
+
+    a.onclick = () => {
+      if (authorId) {
+        location.href = `/statics/channel.html?c=${authorId}`;
+      }
+    };
+
     document.getElementById("desc").textContent = v.description || "";
   });
 
@@ -271,9 +297,23 @@ fetch(`/api/comments?video_id=${videoId}`)
     });
   });
 
-/* ===== ストリーム再生 ===== */
+/* ===== 外部再生 ===== */
 function openStream() {
   setPlayer("invidious");
+}
+
+function goStreamUrl() {
+  const q = document.getElementById("quality").value || "best";
+  location.href = `/api/streamurl?video_id=${videoId}&quality=${q}`;
+}
+
+function playEducation() {
+  const keyUrl =
+    "https://raw.githubusercontent.com/toka-kun/Education/refs/heads/main/keys/key1.json";
+  const encoded = encodeURIComponent(keyUrl);
+
+  location.href =
+    `https://www.youtubeeducation.com/watch?v=${videoId}&key=${encoded}`;
 }
 </script>
 
