@@ -47,8 +47,7 @@ body {
   aspect-ratio: 16 / 9;
 }
 
-.video-wrap iframe,
-.video-wrap video {
+.video-wrap iframe {
   width: 100%;
   height: 100%;
   border: none;
@@ -167,7 +166,6 @@ body {
 
 <script>
 const videoId = new URLSearchParams(location.search).get("v");
-const player = document.getElementById("player");
 const videoWrap = document.getElementById("videoWrap");
 
 const INVIDIOUS_EMBED = "https://pol1.iv.ggtyler.dev/embed/";
@@ -249,28 +247,10 @@ fetch(`/api/comments?video_id=${videoId}`)
     document.getElementById("comments").textContent = "コメント取得失敗";
   });
 
-/* ===== PiP ストリーム再生 ===== */
+/* ===== ストリーム再生（修正版） ===== */
 function openStream() {
-  const q = document.getElementById("quality").value;
-
-  fetch(`/api/streamurl?video_id=${videoId}&quality=${q}`, { redirect: "follow" })
-    .then(r => {
-      const url = r.url;
-
-      videoWrap.innerHTML = `
-        <video id="pipVideo" src="${url}" controls autoplay playsinline></video>
-      `;
-
-      const v = document.getElementById("pipVideo");
-
-      v.addEventListener("loadedmetadata", async () => {
-        if (document.pictureInPictureEnabled) {
-          try {
-            await v.requestPictureInPicture();
-          } catch {}
-        }
-      });
-    });
+  const q = document.getElementById("quality").value || "best";
+  location.href = `/api/streamurl?video_id=${videoId}&quality=${q}`;
 }
 
 /* ===== ストリームURLへ ===== */
