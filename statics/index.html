@@ -31,6 +31,11 @@ header input {
   font-size: 16px;
 }
 
+header select {
+  padding: 10px;
+  font-size: 14px;
+}
+
 header button {
   padding: 10px 16px;
   background: #2563eb;
@@ -97,6 +102,14 @@ header button {
     placeholder="動画を検索"
     onkeydown="if(event.key==='Enter') search()"
   >
+
+  <!-- 追加：検索種別 -->
+  <select id="type">
+    <option value="all">すべて</option>
+    <option value="shorts">ショート</option>
+    <option value="video">動画</option>
+  </select>
+
   <button onclick="search()">検索</button>
 </header>
 
@@ -106,6 +119,7 @@ header button {
 <script>
 async function search() {
   const q = document.getElementById("q").value.trim();
+  const type = document.getElementById("type").value;
   const status = document.getElementById("status");
   const grid = document.getElementById("results");
 
@@ -115,7 +129,10 @@ async function search() {
   status.textContent = "検索中…";
 
   try {
-    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    const res = await fetch(
+      `/api/search?q=${encodeURIComponent(q)}&type=${type}`
+    );
+
     if (!res.ok) {
       status.textContent = "検索できませんでした";
       return;
