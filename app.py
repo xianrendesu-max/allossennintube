@@ -125,12 +125,15 @@ def try_json(url, params=None):
 # Search
 # ===============================
 @app.get("/api/search")
-def api_search(q: str):
+def api_search(q: str, type: str = "all"):
     results = []
     random.shuffle(SEARCH_APIS)
 
     for base in SEARCH_APIS:
-        data = try_json(f"{base}/api/v1/search", {"q": q, "type": "video"})
+        data = try_json(
+            f"{base}/api/v1/search",
+            {"q": q, "type": "video"}
+        )
         if not isinstance(data, list):
             continue
 
@@ -138,15 +141,30 @@ def api_search(q: str):
             if not v.get("videoId"):
                 continue
 
+            length = int(v.get("lengthSeconds") or 0)
+
+            # ★ ショート / 動画判定（最小追加）
+            if type == "shorts" and length >= 60:
+                continue
+            if type == "video" and length < 60:
+                continue
+
             results.append({
                 "videoId": v.get("videoId"),
                 "title": v.get("title"),
                 "author": v.get("author"),
                 "authorId": v.get("authorId"),
+                "lengthSeconds": length,
+                "published": v.get("published"),
+                "publishedText": v.get("publishedText") or ""
             })
 
         if results:
-            return {"count": len(results), "results": results, "source": base}
+            return {
+                "count": len(results),
+                "results": results,
+                "source": base
+            }
 
     raise HTTPException(status_code=503, detail="Search unavailable")
 
