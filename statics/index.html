@@ -45,6 +45,37 @@ header button {
   font-size: 15px;
 }
 
+/* ===== トレンド ===== */
+#trendBox {
+  padding: 12px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #ddd;
+}
+
+.trend-title {
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+#trends {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.trend-item {
+  background: #e5e7eb;
+  padding: 6px 10px;
+  border-radius: 20px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.trend-item:hover {
+  background: #dbeafe;
+}
+
 /* ===== ステータス ===== */
 #status {
   padding: 10px 16px;
@@ -103,7 +134,6 @@ header button {
     onkeydown="if(event.key==='Enter') search()"
   >
 
-  <!-- 追加：検索種別 -->
   <select id="type">
     <option value="all">すべて</option>
     <option value="shorts">ショート</option>
@@ -113,10 +143,56 @@ header button {
   <button onclick="search()">検索</button>
 </header>
 
+<div id="trendBox">
+  <div class="trend-title">🔥 トレンド</div>
+  <div id="trends"></div>
+</div>
+
 <div id="status"></div>
 <div id="results" class="grid"></div>
 
 <script>
+const TREND_URL =
+  "https://raw.githubusercontent.com/siawaseok3/wakame/refs/heads/master/trend.json";
+
+const TREND_INTERVAL = 10 * 60 * 1000;
+let lastTrendText = "";
+
+async function loadTrends() {
+  try {
+    const res = await fetch(TREND_URL + "?t=" + Date.now(), {
+      cache: "no-store"
+    });
+    if (!res.ok) return;
+
+    const text = await res.text();
+    if (text === lastTrendText) return;
+    lastTrendText = text;
+
+    const data = JSON.parse(text);
+    const trends = data.trends || data || [];
+
+    const box = document.getElementById("trends");
+    box.innerHTML = "";
+
+    trends.slice(0, 20).forEach(word => {
+      const span = document.createElement("span");
+      span.className = "trend-item";
+      span.textContent = word;
+      span.onclick = () => {
+        document.getElementById("q").value = word;
+        search();
+      };
+      box.appendChild(span);
+    });
+  } catch (e) {
+    console.warn("トレンド取得失敗");
+  }
+}
+
+loadTrends();
+setInterval(loadTrends, TREND_INTERVAL);
+
 async function search() {
   const q = document.getElementById("q").value.trim();
   const type = document.getElementById("type").value;
