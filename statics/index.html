@@ -144,7 +144,7 @@ header button {
 </header>
 
 <div id="trendBox">
-  <div class="trend-title">🔥 トレンド</div>
+  <div class="trend-title">トレンド</div>
   <div id="trends"></div>
 </div>
 
@@ -161,6 +161,10 @@ let lastTrendText = "";
 /* ===== トレンド取得 ===== */
 async function loadTrends() {
   try {
+    // ★ 初期表示を必ず保証
+    const trendBox = document.getElementById("trendBox");
+    trendBox.style.display = "block";
+
     const res = await fetch(TREND_URL + "?t=" + Date.now(), {
       cache: "no-store"
     });
@@ -191,7 +195,7 @@ async function loadTrends() {
   }
 }
 
-/* 初回＆定期更新 */
+/* 初回ロード＋定期更新 */
 loadTrends();
 setInterval(loadTrends, TREND_INTERVAL);
 
@@ -204,7 +208,7 @@ async function search() {
 
   if (!q) return;
 
-  /* 🔥 検索されたらトレンド非表示 */
+  // ★ 検索時はトレンド非表示
   document.getElementById("trendBox").style.display = "none";
 
   grid.innerHTML = "";
@@ -259,7 +263,7 @@ async function search() {
   }
 }
 
-/* ===== チャンネル遷移 ===== */
+/* ===== チャンネル ===== */
 function goChannel(event, channelId) {
   event.stopPropagation();
   if (!channelId) return;
@@ -286,4 +290,4 @@ function escapeHtml(str) {
 </div>
 
 </body>
-  </html>
+</html>
