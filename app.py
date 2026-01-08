@@ -7,6 +7,7 @@ import os
 
 app = FastAPI()
 
+
 if os.path.isdir("statics"):
     app.mount("/static", StaticFiles(directory="statics"), name="static")
 else:
@@ -17,6 +18,7 @@ def root():
     if os.path.isfile("statics/index.html"):
         return FileResponse("statics/index.html")
     return {"status": "index.html not found"}
+
 
 VIDEO_APIS = [
     "https://iv.melmac.space",
@@ -37,6 +39,7 @@ COMMENTS_APIS = [
     "https://iv.melmac.space",
     "https://iv.duti.dev",
 ]
+
 
 VIDEO_APIS_EXTRA = [
     "https://invidious.exma.de/",
@@ -81,11 +84,13 @@ COMMENTS_APIS_EXTRA = [
     "https://invidious.nietzospannend.nl/",
 ]
 
+
 VIDEO_APIS = list(dict.fromkeys(VIDEO_APIS + VIDEO_APIS_EXTRA))
 SEARCH_APIS = list(dict.fromkeys(SEARCH_APIS + SEARCH_APIS_EXTRA))
 COMMENTS_APIS = list(dict.fromkeys(COMMENTS_APIS + COMMENTS_APIS_EXTRA))
 CHANNEL_APIS = VIDEO_APIS + CHANNEL_APIS_EXTRA
 PLAYLIST_APIS = PLAYLIST_APIS_EXTRA
+
 
 STREAM_YTDL_API_BASE_URL = "https://yudlp.vercel.app/stream/"
 SHORT_STREAM_API_BASE_URL = "https://yt-dl-kappa.vercel.app/short/"
@@ -93,6 +98,7 @@ HLS_API_BASE_URL = "https://yudlp.vercel.app/m3u8/"
 
 TIMEOUT = 6
 HEADERS = {"User-Agent": "Mozilla/5.0"}
+
 
 def try_json(url, params=None):
     try:
@@ -102,6 +108,7 @@ def try_json(url, params=None):
     except Exception as e:
         print("request error:", e)
     return None
+
 
 @app.get("/api/search")
 def api_search(q: str, type: str = "all"):
@@ -122,6 +129,7 @@ def api_search(q: str, type: str = "all"):
 
             length = int(v.get("lengthSeconds") or 0)
 
+            # ★ ショート / 動画判定（最小追加）
             if type == "shorts" and length >= 60:
                 continue
             if type == "video" and length < 60:
@@ -146,6 +154,7 @@ def api_search(q: str, type: str = "all"):
 
     raise HTTPException(status_code=503, detail="Search unavailable")
 
+
 @app.get("/api/video")
 def api_video(video_id: str):
     random.shuffle(VIDEO_APIS)
@@ -164,6 +173,7 @@ def api_video(video_id: str):
 
     raise HTTPException(status_code=503, detail="Video info unavailable")
 
+
 @app.get("/api/comments")
 def api_comments(video_id: str):
     for base in COMMENTS_APIS:
@@ -178,6 +188,9 @@ def api_comments(video_id: str):
             }
     return {"comments": [], "source": None}
 
+# ===============================
+# Channel
+# ===============================
 @app.get("/api/channel")
 def api_channel(c: str):
     random.shuffle(CHANNEL_APIS)
@@ -215,6 +228,7 @@ def api_channel(c: str):
         }
 
     raise HTTPException(status_code=503, detail="Channel unavailable")
+
 
 @app.get("/api/streamurl")
 def api_streamurl(video_id: str):
