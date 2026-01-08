@@ -7,7 +7,9 @@ import os
 
 app = FastAPI()
 
-
+# ===============================
+# Static
+# ===============================
 if os.path.isdir("statics"):
     app.mount("/static", StaticFiles(directory="statics"), name="static")
 else:
@@ -19,7 +21,9 @@ def root():
         return FileResponse("statics/index.html")
     return {"status": "index.html not found"}
 
-
+# ===============================
+# API BASE LIST（既存）
+# ===============================
 VIDEO_APIS = [
     "https://iv.melmac.space",
     "https://pol1.iv.ggtyler.dev",
@@ -40,7 +44,9 @@ COMMENTS_APIS = [
     "https://iv.duti.dev",
 ]
 
-
+# ===============================
+# API BASE LIST（追加分）
+# ===============================
 VIDEO_APIS_EXTRA = [
     "https://invidious.exma.de/",
     "https://invidious.f5.si/",
@@ -84,14 +90,18 @@ COMMENTS_APIS_EXTRA = [
     "https://invidious.nietzospannend.nl/",
 ]
 
-
+# ===============================
+# API BASE LIST（統合）
+# ===============================
 VIDEO_APIS = list(dict.fromkeys(VIDEO_APIS + VIDEO_APIS_EXTRA))
 SEARCH_APIS = list(dict.fromkeys(SEARCH_APIS + SEARCH_APIS_EXTRA))
 COMMENTS_APIS = list(dict.fromkeys(COMMENTS_APIS + COMMENTS_APIS_EXTRA))
 CHANNEL_APIS = VIDEO_APIS + CHANNEL_APIS_EXTRA
 PLAYLIST_APIS = PLAYLIST_APIS_EXTRA
 
-
+# ===============================
+# Stream APIs
+# ===============================
 STREAM_YTDL_API_BASE_URL = "https://yudlp.vercel.app/stream/"
 SHORT_STREAM_API_BASE_URL = "https://yt-dl-kappa.vercel.app/short/"
 HLS_API_BASE_URL = "https://yudlp.vercel.app/m3u8/"
@@ -99,7 +109,9 @@ HLS_API_BASE_URL = "https://yudlp.vercel.app/m3u8/"
 TIMEOUT = 6
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-
+# ===============================
+# Utils
+# ===============================
 def try_json(url, params=None):
     try:
         r = requests.get(url, params=params, headers=HEADERS, timeout=TIMEOUT)
@@ -109,7 +121,9 @@ def try_json(url, params=None):
         print("request error:", e)
     return None
 
-
+# ===============================
+# Search
+# ===============================
 @app.get("/api/search")
 def api_search(q: str, type: str = "all"):
     results = []
@@ -154,7 +168,9 @@ def api_search(q: str, type: str = "all"):
 
     raise HTTPException(status_code=503, detail="Search unavailable")
 
-
+# ===============================
+# Video Info
+# ===============================
 @app.get("/api/video")
 def api_video(video_id: str):
     random.shuffle(VIDEO_APIS)
@@ -173,7 +189,9 @@ def api_video(video_id: str):
 
     raise HTTPException(status_code=503, detail="Video info unavailable")
 
-
+# ===============================
+# Comments
+# ===============================
 @app.get("/api/comments")
 def api_comments(video_id: str):
     for base in COMMENTS_APIS:
@@ -229,7 +247,9 @@ def api_channel(c: str):
 
     raise HTTPException(status_code=503, detail="Channel unavailable")
 
-
+# ===============================
+# Stream URL（変更なし）
+# ===============================
 @app.get("/api/streamurl")
 def api_streamurl(video_id: str):
     try:
