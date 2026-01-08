@@ -9,8 +9,6 @@ app = FastAPI()
 
 if os.path.isdir("statics"):
     app.mount("/static", StaticFiles(directory="statics"), name="static")
-else:
-    print("⚠ statics directory not found (skipped mount)")
 
 @app.get("/")
 def root():
@@ -96,11 +94,16 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 def try_json(url, params=None):
     try:
-        r = requests.get(url, params=params, headers=HEADERS, timeout=TIMEOUT)
+        r = requests.get(
+            url,
+            params=params,
+            headers=HEADERS,
+            timeout=TIMEOUT
+        )
         if r.status_code == 200:
             return r.json()
-    except Exception as e:
-        print("request error:", e)
+    except Exception:
+        pass
     return None
 
 @app.get("/api/search")
