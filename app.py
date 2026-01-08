@@ -9,18 +9,14 @@ app = FastAPI()
 
 if os.path.isdir("statics"):
     app.mount("/static", StaticFiles(directory="statics"), name="static")
+else:
+    print("⚠ statics directory not found (skipped mount)")
 
 @app.get("/")
 def root():
     if os.path.isfile("statics/index.html"):
         return FileResponse("statics/index.html")
     return {"status": "index.html not found"}
-
-@app.get("/status")
-def status():
-    if os.path.isfile("statics/status.html"):
-        return FileResponse("statics/status.html")
-    return {"status": "status.html not found"}
 
 VIDEO_APIS = [
     "https://iv.melmac.space",
@@ -103,8 +99,8 @@ def try_json(url, params=None):
         r = requests.get(url, params=params, headers=HEADERS, timeout=TIMEOUT)
         if r.status_code == 200:
             return r.json()
-    except Exception:
-        pass
+    except Exception as e:
+        print("request error:", e)
     return None
 
 @app.get("/api/search")
@@ -113,7 +109,10 @@ def api_search(q: str, type: str = "all"):
     random.shuffle(SEARCH_APIS)
 
     for base in SEARCH_APIS:
-        data = try_json(f"{base}/api/v1/search", {"q": q, "type": "video"})
+        data = try_json(
+            f"{base}/api/v1/search",
+            {"q": q, "type": "video"}
+        )
         if not isinstance(data, list):
             continue
 
@@ -139,7 +138,11 @@ def api_search(q: str, type: str = "all"):
             })
 
         if results:
-            return {"count": len(results), "results": results, "source": base}
+            return {
+                "count": len(results),
+                "results": results,
+                "source": base
+            }
 
     raise HTTPException(status_code=503, detail="Search unavailable")
 
