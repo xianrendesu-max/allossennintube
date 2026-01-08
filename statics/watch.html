@@ -12,8 +12,6 @@ body {
   background: #f3f4f6;
   color: #111;
 }
-
-/* ===== ヘッダー ===== */
 .header {
   background: #ffffff;
   padding: 10px;
@@ -24,7 +22,6 @@ body {
   z-index: 10;
   border-bottom: 1px solid #ddd;
 }
-
 .header button {
   flex: 1;
   padding: 10px;
@@ -33,58 +30,46 @@ body {
   cursor: pointer;
   font-size: 14px;
 }
-
 .header button.active {
   background: #2563eb;
   color: #fff;
   border-color: #2563eb;
 }
-
-/* ===== 動画 ===== */
 .video-wrap {
   width: 100%;
   background: #000;
   aspect-ratio: 16 / 9;
 }
-
 .video-wrap iframe,
 .video-wrap video {
   width: 100%;
   height: 100%;
   border: none;
 }
-
-/* ===== セクション ===== */
 .section {
   background: #fff;
   margin: 12px;
   padding: 12px;
   border-radius: 8px;
 }
-
 .title {
   font-size: 18px;
   font-weight: bold;
   margin-bottom: 6px;
 }
-
 .author {
   font-size: 13px;
   color: #2563eb;
   margin-bottom: 10px;
   cursor: pointer;
 }
-
 .author:hover {
   text-decoration: underline;
 }
-
 .desc {
   font-size: 14px;
   white-space: pre-wrap;
 }
-
-/* ===== ストリーム ===== */
 .stream select,
 .stream button {
   width: 100%;
@@ -92,29 +77,23 @@ body {
   font-size: 14px;
   margin-top: 6px;
 }
-
 .stream button {
   background: #0ea5e9;
   color: #fff;
   border: none;
   cursor: pointer;
 }
-
 .stream button.green {
   background: #16a34a;
 }
-
-/* ===== コメント ===== */
 .comment {
   border-top: 1px solid #eee;
   padding: 8px 0;
 }
-
 .comment-author {
   font-weight: bold;
   font-size: 13px;
 }
-
 .comment-body {
   font-size: 14px;
 }
@@ -123,18 +102,15 @@ body {
 
 <body>
 
-<!-- ===== 再生切替 ===== -->
 <div class="header">
   <button id="btn-nocookie" onclick="setPlayer('nocookie')">nocookie</button>
   <button id="btn-invidious" onclick="setPlayer('invidious')">Invidious</button>
 </div>
 
-<!-- ===== 動画 ===== -->
 <div class="video-wrap" id="videoWrap">
   <iframe id="player" allowfullscreen></iframe>
 </div>
 
-<!-- ===== 情報 ===== -->
 <div class="section">
   <div id="title" class="title">読み込み中...</div>
   <div id="author" class="author"></div>
@@ -180,7 +156,6 @@ let authorId = null;
 const btnNocookie = document.getElementById("btn-nocookie");
 const btnInvidious = document.getElementById("btn-invidious");
 
-/* ===== プレイヤー切替 ===== */
 function clearActive() {
   btnNocookie.classList.remove("active");
   btnInvidious.classList.remove("active");
@@ -198,15 +173,17 @@ function setPlayer(type) {
   }
 
   if (type === "invidious") {
-    const base = INVIDIOUS_INSTANCES[invidiousIndex];
-    iframe.src = `${base}/embed/${videoId}`;
+    iframe.src = `${INVIDIOUS_INSTANCES[invidiousIndex]}/embed/${videoId}`;
+    iframe.onerror = () => {
+      invidiousIndex = (invidiousIndex + 1) % INVIDIOUS_INSTANCES.length;
+      setPlayer("invidious");
+    };
     btnInvidious.classList.add("active");
   }
 }
 
 setPlayer("nocookie");
 
-/* ===== 動画情報 ===== */
 fetch(`/api/video?video_id=${videoId}`)
   .then(r => r.json())
   .then(v => {
@@ -218,12 +195,8 @@ fetch(`/api/video?video_id=${videoId}`)
       if (authorId) location.href = `/statics/channel.html?c=${authorId}`;
     };
     document.getElementById("desc").textContent = v.description || "";
-  })
-  .catch(() => {
-    document.getElementById("title").textContent = "動画情報取得失敗";
   });
 
-/* ===== コメント ===== */
 fetch(`/api/comments?video_id=${videoId}`)
   .then(r => r.json())
   .then(d => {
@@ -242,61 +215,23 @@ fetch(`/api/comments?video_id=${videoId}`)
       `;
       c.appendChild(div);
     });
-  })
-  .catch(() => {
-    document.getElementById("comments").textContent = "コメント取得失敗";
   });
 
-/* ===== PiP ストリーム再生（ローテーション＋フォールバック） ===== */
 function openStream() {
   const q = document.getElementById("quality").value;
-  const itagMap = { "360p":18, "720p":22, "best":22 };
-
-  if (currentPlayer !== "invidious") {
-    location.href = `/api/streamurl?video_id=${videoId}&quality=${q}`;
-    return;
-  }
-
-  tryNextInvidious(itagMap[q], 0);
+  location.href = `/api/streamurl?video_id=${videoId}&quality=${q}`;
 }
 
-function tryNextInvidious(itag, retry) {
-  if (retry >= INVIDIOUS_INSTANCES.length) {
-    location.href = `/api/streamurl?video_id=${videoId}&quality=best`;
-    return;
-  }
-
-  const base = INVIDIOUS_INSTANCES[invidiousIndex];
-  const url = `${base}/latest_version?id=${videoId}&itag=${itag}`;
-
-  videoWrap.innerHTML = `<video id="pipVideo" src="${url}" controls autoplay playsinline></video>`;
-  const v = document.getElementById("pipVideo");
-
-  v.onerror = () => {
-    invidiousIndex = (invidiousIndex + 1) % INVIDIOUS_INSTANCES.length;
-    tryNextInvidious(itag, retry + 1);
-  };
-
-  v.onloadedmetadata = async () => {
-    if (document.pictureInPictureEnabled) {
-      try { await v.requestPictureInPicture(); } catch {}
-    }
-  };
-}
-
-/* ===== 既存機能 ===== */
 function goStreamUrl() {
   const q = document.getElementById("quality").value || "best";
   location.href = `/api/streamurl?video_id=${videoId}&quality=${q}`;
 }
 
 function playEducation() {
-  const configUrl =
-    "https://raw.githubusercontent.com/toka-kun/Education/refs/heads/main/keys/key1.json";
   location.href =
     "https://www.youtubeeducation.com/watch"
     + "?v=" + encodeURIComponent(videoId)
-    + "&config=" + encodeURIComponent(configUrl);
+    + "&config=" + encodeURIComponent("https://raw.githubusercontent.com/toka-kun/Education/refs/heads/main/keys/key1.json");
 }
 </script>
 
