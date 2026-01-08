@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 import requests
 import random
 import os
+import re
 
 app = FastAPI()
 
@@ -90,10 +91,18 @@ SHORT_STREAM_API_BASE_URL = "https://yt-dl-kappa.vercel.app/short/"
 HLS_API_BASE_URL = "https://yudlp.vercel.app/m3u8/"
 
 TIMEOUT = 6
-HEADERS = {"User-Agent": "Mozilla/5.0"}
+HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept-Language": "ja-JP,ja;q=0.9"
+}
 
 def try_json(url, params=None):
     try:
+        if params is None:
+            params = {}
+        params.setdefault("hl", "ja")
+        params.setdefault("gl", "JP")
+
         r = requests.get(
             url,
             params=params,
@@ -105,6 +114,13 @@ def try_json(url, params=None):
     except Exception:
         pass
     return None
+
+def has_japanese(text: str):
+    return bool(re.search(r"[ぁ-んァ-ン一-龯]", text or ""))
+
+def is_japanese_audio(fmt: dict):
+    lang = fmt.get("audioLanguage") or fmt.get("language")
+    return lang == "ja"
 
 @app.get("/api/search")
 def api_search(q: str, type: str = "all"):
@@ -221,19 +237,28 @@ def api_channel(c: str):
 
 @app.get("/api/streamurl")
 def api_streamurl(video_id: str):
-    try:
-        data = try_json(f"{HLS_API_BASE_URL}{video_id}")
-        if data:
-            m3u8s = [f for f in data.get("m3u8_formats", []) if f.get("url")]
-            if m3u8s:
-                best = sorted(
-                    m3u8s,
-                    key=lambda f: int((f.get("resolution") or "0x0").split("x")[-1]),
-                    reverse=True
-                )[0]
-                return RedirectResponse(best["url"])
-    except Exception:
-        pass
+    info = api_video(video_id)
+
+    if not (
+        has_japanese(info.get("title")) or
+        has_japanese(info.get("description")) or
+        has_japanese(info.get("author"))
+    ):
+        raise HTTPException(status_code=403, detail="Japanese videos only")
+
+    data = try_json(f"{HLS_API_BASE_URL}{video_id}")
+    if data:
+        m3u8s = [
+            f for f in data.get("m3u8_formats", [])
+            if f.get("url") and is_japanese_audio(f)
+        ]
+        if m3u8s:
+            best = sorted(
+                m3u8s,
+                key=lambda f: int((f.get("resolution") or "0x0").split("x")[-1]),
+                reverse=True
+            )[0]
+            return RedirectResponse(best["url"])
 
     for base in [STREAM_YTDL_API_BASE_URL, SHORT_STREAM_API_BASE_URL]:
         data = try_json(f"{base}{video_id}")
@@ -241,7 +266,7 @@ def api_streamurl(video_id: str):
             continue
 
         for f in data.get("formats", []):
-            if f.get("itag") == "18" and f.get("url"):
+            if f.get("itag") == "18" and f.get("url") and is_japanese_audio(f):
                 return RedirectResponse(f["url"])
 
     random.shuffle(VIDEO_APIS)
@@ -251,7 +276,7 @@ def api_streamurl(video_id: str):
             continue
 
         for f in data.get("formatStreams", []):
-            if f.get("url"):
+            if f.get("url") and is_japanese_audio(f):
                 return RedirectResponse(f["url"])
 
     raise HTTPException(status_code=503, detail="Stream unavailable")
